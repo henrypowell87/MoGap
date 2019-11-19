@@ -1,9 +1,5 @@
-import torch
 import torch.nn
-import torch.optim as optim
 from torch.utils import data
-from torchvision import transforms
-import numpy as np
 from classes import DataSet
 from functions import load_data
 

@@ -1,5 +1,6 @@
 import torch
 import pandas as pd
+from torch import nn
 from torch.utils import data
 
 
@@ -24,3 +25,4 @@ class DataSet(data.Dataset):
         y = self.ground_truths[ID]
 
         return x, y
+
