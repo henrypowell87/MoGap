@@ -1,5 +1,5 @@
 import torch
-import pandas as pd
+import numpy as np
 from torch.utils import data
 
 
@@ -15,9 +15,7 @@ class DataSet(data.Dataset):
 
     def __getitem__(self, index):
         ID = self.list_IDS[index]
-        x = pd.read_csv(self.data_dir + ID, )
-        x = x.drop(x.columns[30], axis=1)
-        x = torch.Tensor(x.values)
+        x = np.load(self.data_dir + ID)
         if self.transform:
             x = self.transform(x)
         y = self.ground_truths[ID]

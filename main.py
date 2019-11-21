@@ -11,8 +11,8 @@ max_epochs = 90
 run_on = 'GPU'
 train_network = True
 
-gap_data_path = '/home/henryp/PycharmProjects/MoGap/augmented_data/'
-ground_truth_path = '/home/henryp/PycharmProjects/MoGap/ground_truth_data/'
+gap_data_path = '/home/henryp/PycharmProjects/MoGap/cropped_augmented_data/'
+ground_truth_path = '/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data/'
 
 if run_on == 'GPU':
     device = torch.device('cuda:0')

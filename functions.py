@@ -18,10 +18,8 @@ def load_data(gap_data_dir, ground_truth_dir):
     ground_truth_files = [p for p in directory.iterdir() if p.is_file()]
     ground_truth = []
     for file in ground_truth_files:
-        ground_truth_data = pd.read_csv(file, index_col=0)
-        ground_truth_data = ground_truth_data.drop(ground_truth_data.columns[30], axis=1)
-        ground_truth_data = torch.Tensor(ground_truth_data.values)
-        # ground_truth_data = ground_truth_data[:700]
+        ground_truth_data = np.load(file)
+        ground_truth_data = torch.Tensor(ground_truth_data)
         ground_truth.append(ground_truth_data)
 
     x_y_pairs = list(zip(gap_data_names, ground_truth))
