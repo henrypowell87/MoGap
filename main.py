@@ -1,7 +1,7 @@
 import torch.nn
 from torch.utils import data
 from classes import DataSet
-from functions import load_data
+from functions import load_data, crop_data
 
 batch_size = 10
 params = {'batch_size': batch_size,

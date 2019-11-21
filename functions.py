@@ -63,24 +63,22 @@ def crop_data(path_gt, path_aug, new_gt_dir, new_aug_dir):
 
     for d in dirs:
         i = 1
-        print(d)
         for file in d:
             data = pd.read_csv(file, index_col=[0])
+            if data.shape[1] == 31:
+                data = data.drop(data.columns[30], axis=1)
             data = data[:(data.shape[0] - (data.shape[0] % 5))]
             for j in range(0, data.shape[0] - file_size, 5):
                 new_file = data[j:j + file_size]
                 if d == files_gt:
                     if i < 10:
-                        np.save(new_gt_dir + 'CGT_0000' + str(i),
-                                new_file)
+                        np.save(new_gt_dir + 'CGT_0000' + str(i), new_file)
                         i += 1
                     elif i < 100:
-                        np.save(new_gt_dir + 'CGT_000' + str(i),
-                                new_file)
+                        np.save(new_gt_dir + 'CGT_000' + str(i), new_file)
                         i += 1
                     elif i < 1000:
-                        np.save(new_gt_dir + 'CGT_00' + str(i),
-                                new_file)
+                        np.save(new_gt_dir + 'CGT_00' + str(i), new_file)
                         i += 1
                     elif i < 10000:
                         np.save(new_gt_dir + 'CGT_0' + str(i), new_file)
@@ -90,8 +88,7 @@ def crop_data(path_gt, path_aug, new_gt_dir, new_aug_dir):
                         i += 1
                 elif d == files_aug:
                     if i < 10:
-                        np.save(new_aug_dir + 'CAUG_0000' + str(i),
-                                new_file)
+                        np.save(new_aug_dir + 'CAUG_0000' + str(i), new_file)
                         i += 1
                     elif i < 100:
                         np.save(new_aug_dir + 'CAUG_000' + str(i), new_file)
@@ -107,19 +104,15 @@ def crop_data(path_gt, path_aug, new_gt_dir, new_aug_dir):
                         i += 1
 
 
-def missing_marker_sim(path, erased_data_dir):
-    assert isinstance(path, str)
+def missing_marker_sim(gt_data_path, erased_data_dir, max_gap_size=200, max_erasures=10):
+    assert isinstance(gt_data_path, str)
     assert isinstance(erased_data_dir, str)
 
-    max_gap_size = 200
-    max_erasures = 10
-
-    directory = Path(path)
+    directory = Path(gt_data_path)
 
     files = [p for p in directory.iterdir() if p.is_file() and not str(p).endswith('.DS_Store')]
 
     files.sort()
-
     for file in files:
         raw_data = pd.read_csv(file, index_col=[0])
         erased_data = raw_data.drop(raw_data.columns[30], axis=1)
@@ -137,7 +130,7 @@ def missing_marker_sim(path, erased_data_dir):
 
         previous_col = 0
         update = 0.6
-        for erasure in range(np.random.randint(max_erasures)):
+        for erasure in range(np.random.randint(1, max_erasures)):
             if erasure == 0:
                 probabilities = [1 / len(start_cols) for i in start_cols]
             else:
@@ -145,7 +138,7 @@ def missing_marker_sim(path, erased_data_dir):
                 probabilities[int(previous_col / 3)] = update
             start_row = np.random.randint(index_min, index_max)
             start_col = np.random.choice(start_cols, p=probabilities, replace=True)
-            erase_len = np.random.randint(max_gap_size)
+            erase_len = np.random.randint(1, max_gap_size)
             for i in range(erase_len):
                 for j in range(3):
                     if start_row + i <= index_max:
@@ -157,3 +150,51 @@ def missing_marker_sim(path, erased_data_dir):
         file_name = str(file)[-12:]
 
         erased_data.to_csv(erased_data_dir + file_name + 'GAPS' + '.csv')
+
+
+def remove_nan_files(path_gt, path_aug):
+    assert isinstance(path_gt, str)
+    assert isinstance(path_aug, str)
+
+    directory_gt = Path(path_gt)
+    directory_aug = Path(path_aug)
+
+    files_gt = [p for p in directory_gt.iterdir() if p.is_file()]
+
+    i = 0
+    bad_files = []
+    for file in files_gt:
+        data = pd.read_csv(file, index_col=[0])
+        if data.shape[1] == 31:
+            data = data.drop(data.columns[30], axis=1)
+        data = np.array(data)
+        if True in np.isnan(data):
+            i += 1
+            bad_files.append(str(file)[-12:])
+
+    bad_files_gt = []
+    bad_files_aug = []
+
+    for i in bad_files:
+        bad_files_gt.append([str(p) for p in directory_gt.iterdir() if p.is_file() and i in str(p)])
+        bad_files_aug.append([str(p) for p in directory_aug.iterdir() if p.is_file() and i in str(p)])
+    bad_files_gt = [i for sublist in bad_files_gt for i in sublist]
+    bad_files_aug = [i for sublist in bad_files_aug for i in sublist]
+
+    for i in bad_files_gt:
+        os.remove(i)
+
+    for i in bad_files_aug:
+        os.remove(i)
+
+
+# crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_data/',
+#           path_aug='/home/henryp/PycharmProjects/MoGap/augmented_data/',
+#           new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data/',
+#           new_aug_dir='/home/henryp/PycharmProjects/MoGap/cropped_augmented_data/')
+
+
+# missing_marker_sim(gt_data_path='/home/henryp/PycharmProjects/MoGap/cropped_augmented_data/',
+#                    erased_data_dir='/home/henryp/PycharmProjects/MoGap/cropped_augmented_data/',
+#                    max_erasures=5,
+#                    max_gap_size=28)

@@ -1,6 +1,5 @@
 import torch
 import pandas as pd
-from torch import nn
 from torch.utils import data
 
 
@@ -19,7 +18,6 @@ class DataSet(data.Dataset):
         x = pd.read_csv(self.data_dir + ID, )
         x = x.drop(x.columns[30], axis=1)
         x = torch.Tensor(x.values)
-        # x = x[:700]
         if self.transform:
             x = self.transform(x)
         y = self.ground_truths[ID]
