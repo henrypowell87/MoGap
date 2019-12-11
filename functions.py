@@ -147,28 +147,15 @@ def remove_nan_files(path_gt, path_aug):
         os.remove(i)
 
 
-def normalize_time_series(time_series_tensor, min_val, max_val):
-    assert isinstance(time_series_tensor, torch.Tensor)
-
-    time_series_tensor_copy = time_series_tensor.clone()
-    time_series_tensor_copy = time_series_tensor_copy.float()
-    normed_array = torch.Tensor()
-    for i in range(time_series_tensor_copy.size(0)):
-        normalized = time_series_tensor_copy[i]
-        min = torch.min(normalized)
-        normalized = (normalized - min)
-        max = torch.max(normalized)
-        normalized = normalized/max
-        normalized = normalized * (max_val - min_val) + min_val
-        normalized = normalized.unsqueeze(0)
-        normed_array = torch.cat((normed_array, normalized))
-    return normed_array
-
-
 def apply_missing(time_series_tensor, max_erasures, max_gap_size):
-    assert isinstance(time_series_tensor, torch.Tensor)
+    assert isinstance(time_series_tensor, torch.Tensor)#
 
-    time_series_tensor_copy = time_series_tensor.clone()
+    if len(time_series_tensor.size()) < 3:
+        time_series_tensor_copy = time_series_tensor.clone()
+        time_series_tensor_copy = time_series_tensor_copy.unsqueeze(0)
+    else:
+        time_series_tensor_copy = time_series_tensor.clone()
+
     time_series_tensor_copy = time_series_tensor_copy.float()
     missing_array = torch.Tensor()
     for k in range(time_series_tensor_copy.size(0)):
@@ -213,6 +200,24 @@ def nan_to_zero(tensor):
     tensor_copy = tensor.clone()
     tensor_copy[torch.isnan(tensor_copy)] = 0.0000
     return tensor_copy
+
+
+def normalize_time_series(time_series_tensor, min_val, max_val):
+    assert isinstance(time_series_tensor, torch.Tensor)
+
+    time_series_tensor_copy = time_series_tensor.clone()
+    time_series_tensor_copy = time_series_tensor_copy.float()
+    normed_array = torch.Tensor()
+    for i in range(time_series_tensor_copy.size(0)):
+        normalized = time_series_tensor_copy[i]
+        min = torch.min(normalized)
+        normalized = (normalized - min)
+        max = torch.max(normalized)
+        normalized = normalized/max
+        normalized = normalized * (max_val - min_val) + min_val
+        normalized = normalized.unsqueeze(0)
+        normed_array = torch.cat((normed_array, normalized))
+    return normed_array
 
 
 # crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_data/',

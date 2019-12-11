@@ -23,28 +23,6 @@ class DataSet(data.Dataset):
         return x
 
 
-class RNNAutoencoder(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers):
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-
-        super(RNNAutoencoder, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.RNN(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True),
-            nn.ReLU()
-        )
-        self.decoder = nn.Sequential(
-            nn.RNN(input_size=hidden_size, hidden_size=input_size, num_layers=num_layers, batch_first=True),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        x, hidden_a = self.encoder(x)
-        x, hidden_b = self.decoder(x)
-        return x
-
-
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
         super(EncoderRNN, self).__init__()
