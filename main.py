@@ -1,8 +1,11 @@
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
+import numpy as np
 from torch.utils import data
-from classes import DataSet, RNNAE
-from functions import load_data, normalize_time_series, apply_missing, nan_to_zero
+from data_loader import DataSet
+from BdRNNAE import BdRNNAE
+from functions import load_data, normalize_time_series, apply_missing
 
 batch_size = 32
 params = {'batch_size': batch_size,
@@ -26,26 +29,31 @@ print('Training on: ' + str(device))
 partition, training_set_size = load_data(ground_truth_dir=ground_truth_path)
 
 training_set = DataSet(list_IDS=partition['train'], data_dir=ground_truth_path)
+
+testing_set = DataSet(list_IDS=partition['test'], data_dir=ground_truth_path)
+
 training_generator = data.DataLoader(training_set, **params)
 
-net = RNNAE(input_size=30, hidden_size=20, num_layers=5)
+net = BdRNNAE(input_size=30, hidden_size=10, num_layers=2)
+net = net.double()
 net = net.cuda()
 
 if train_network:
 
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(
-        net.parameters(), lr=1e-6, weight_decay=1e-5
-    )
+        net.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                            patience=5, verbose=True)
+
+    loss_values = []
 
     for epoch in range(max_epochs):
         for local_batch in training_generator:
 
             if epoch % 10 == 0:
                 local_batch = local_batch.clone()
-                torch.save(local_batch, './examples/' + 'original_epoch' + str(epoch + 1) + '.pt')
+                torch.save(local_batch, './examples/' + 'original_epoch' + str(epoch) + '.pt')
 
             # preprocess data
             local_batch = normalize_time_series(local_batch, -1, 1)
@@ -57,57 +65,55 @@ if train_network:
 
             if epoch % 10 == 0:
                 missing = local_batch_missing.clone()
-                torch.save(missing, './examples/' + 'missing_epoch' + str(epoch+1) + '.pt')
+                torch.save(missing, './examples/' + 'missing_epoch' + str(epoch) + '.pt')
 
             # training loop
+            optimizer.zero_grad()
             outputs = net(local_batch_missing)
+
             if epoch % 10 == 0:
                 estimated = outputs.clone()
-                torch.save(estimated, './examples/' + 'estimated_epoch' + str(epoch+1) + '.pt')
+                torch.save(estimated, './examples/' + 'estimated_epoch' + str(epoch) + '.pt')
 
             loss = criterion(outputs, local_batch)
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
         scheduler.step(loss)
 
         print('epoch [{}/{}], loss:{:.4f}'
               .format(epoch + 1, max_epochs, loss.data.item()))
-
+        loss_values.append(loss.data.item())
     torch.save(net.state_dict(), PATH)
+
+    # plot loss over training
+    plt.plot([i for i in range(max_epochs)], loss_values)
+    plt.title('BdRNNAE loss. Final loss: ' + str(np.mean(loss_values)))
+    plt.savefig('BdRNNAE_loss')
+
 
 else:
     print('Loading saved network state...')
     net.load_state_dict(torch.load(PATH))
 
-# number of samples you want to run through the network
-num_samples = 1
-
-# keep track of how many samples have been processed
-processed = 0
-
-# run the required number of samples through the trained network
+# test on testing_set
+running_loss = []
 with torch.no_grad():
-    i = 1
-    for local_batch in training_generator:
-        original = local_batch[0].unsqueeze(0)
-        original = normalize_time_series(original, -1, 1)
-        original_missing = apply_missing(time_series_tensor=original, max_erasures=5, max_gap_size=10)
+    for local_batch in testing_set:
+        # preprocess data
+        local_batch = normalize_time_series(local_batch, -1, 1)
+        local_batch_missing = apply_missing(time_series_tensor=local_batch, max_erasures=5, max_gap_size=10)
 
-        original = original.to(device)
-        original_missing = original_missing.to(device)
+        # move to GPU
+        local_batch = local_batch.to(device)
+        local_batch_missing = local_batch_missing.to(device)
 
-        estimated = net(original)
+        outputs = net(local_batch_missing)
+        loss = criterion(local_batch, outputs)
+        running_loss.append(loss.data.item())
 
-        torch.save(original, './examples/original_' + str(i) + '.pt')
-        torch.save(original_missing, './examples/original_missing_' + str(i) + '.pt')
-        torch.save(estimated, './examples/estimated_' + str(i) + '.pt')
-
-        processed += 1
-        i += 1
-        if processed == num_samples:
-            break
-
+    print('epoch [{}/{}], loss:{:.4f}'
+          .format(epoch + 1, max_epochs, loss.data.item()))
+    print('Mean Loss:' + str(np.mean(running_loss)))
 
 
 
