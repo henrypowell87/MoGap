@@ -2,8 +2,10 @@ import pandas as pd
 import torch
 import os
 import numpy as np
+import sys
 from pathlib import Path
 from random import shuffle
+np.set_printoptions(threshold=sys.maxsize)
 
 
 def load_data(ground_truth_dir): # gap_data_dir
@@ -194,3 +196,39 @@ def normalize_time_series(time_series_tensor, min_val, max_val):
         normalized = normalized.unsqueeze(0)
         normed_array = torch.cat((normed_array, normalized))
     return normed_array
+
+
+def split(data, index_cols=True, size=30, gap_length=5, result_dim=(0, 30, 30)):
+    data = np.genfromtxt(data, delimiter=',')
+    if index_cols:
+        data = data[1:][:, 1:]
+    data = data[:(data.shape[0] - (data.shape[0] % gap_length))]
+    print('Original data shape: ' + str(data.shape))
+    sub_lists = np.empty(result_dim)
+    for j in range(0, data.shape[0] - size + gap_length, gap_length):
+        data_slice = data[j:j + size]
+        data_slice = np.expand_dims(data_slice, axis=0)
+        sub_lists = np.append(sub_lists, data_slice, axis=0)
+    data[np.isnan(data)] = 0.0000
+    sub_lists[np.isnan(sub_lists)] = 0.0000
+    return data, sub_lists
+
+
+def merge(sub_lists, gap_length=5, result_dim=(0, 30)):
+    super_list = np.empty(result_dim)
+    for i in range(sub_lists.shape[0]-1):
+        array = sub_lists[i]
+        data_slice = array[:gap_length]
+        super_list = np.append(super_list, data_slice, axis=0)
+    super_list = np.append(super_list, sub_lists[-1], axis=0)
+    print('Merged data shape: ' + str(super_list.shape))
+    return super_list
+
+
+def gap_fill(original, estimated):
+    gap_filled = original.copy()
+    idx = np.argwhere(np.isnan(gap_filled))
+    for i in range(len(idx)):
+        gap_filled[idx[i][0]][idx[i][1]] = estimated[idx[i][0]][idx[i][1]]
+    return gap_filled
+

@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils import data
 from data_loader import DataSet
-from BdRNNAE import BdRNNAE
+from autoencoder_architectures.BdLSTMAE import BdLSTMAE
 from functions import load_data, normalize_time_series, apply_missing
 
+architecture = 'BdLSTMAE'
 batch_size = 32
 params = {'batch_size': batch_size,
           'shuffle': True,
@@ -29,12 +30,12 @@ print('Training on: ' + str(device))
 partition, training_set_size = load_data(ground_truth_dir=ground_truth_path)
 
 training_set = DataSet(list_IDS=partition['train'], data_dir=ground_truth_path)
-
 testing_set = DataSet(list_IDS=partition['test'], data_dir=ground_truth_path)
 
 training_generator = data.DataLoader(training_set, **params)
+testing_generator = data.DataLoader(testing_set, **params)
 
-net = BdRNNAE(input_size=30, hidden_size=10, num_layers=2)
+net = BdLSTMAE(input_size=30, hidden_size=40, num_layers=2)
 net = net.double()
 net = net.cuda()
 
@@ -80,15 +81,15 @@ if train_network:
             optimizer.step()
         scheduler.step(loss)
 
-        print('epoch [{}/{}], loss:{:.4f}'
+        print('epoch [{}/{}], loss:{:.6f}'
               .format(epoch + 1, max_epochs, loss.data.item()))
         loss_values.append(loss.data.item())
     torch.save(net.state_dict(), PATH)
 
     # plot loss over training
     plt.plot([i for i in range(max_epochs)], loss_values)
-    plt.title('BdRNNAE loss. Final loss: ' + str(np.mean(loss_values)))
-    plt.savefig('BdRNNAE_loss')
+    plt.title(architecture + ' loss || Final loss: ' + str(np.mean(loss_values)))
+    plt.savefig(architecture + '_loss')
 
 
 else:
@@ -97,8 +98,9 @@ else:
 
 # test on testing_set
 running_loss = []
+criterion = nn.MSELoss()
 with torch.no_grad():
-    for local_batch in testing_set:
+    for local_batch in testing_generator:
         # preprocess data
         local_batch = normalize_time_series(local_batch, -1, 1)
         local_batch_missing = apply_missing(time_series_tensor=local_batch, max_erasures=5, max_gap_size=10)
@@ -111,9 +113,7 @@ with torch.no_grad():
         loss = criterion(local_batch, outputs)
         running_loss.append(loss.data.item())
 
-    print('epoch [{}/{}], loss:{:.4f}'
-          .format(epoch + 1, max_epochs, loss.data.item()))
-    print('Mean Loss:' + str(np.mean(running_loss)))
+    print('Testing Loss:{:.4f}'.format(loss.data.item()))
 
 
 
