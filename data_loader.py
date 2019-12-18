@@ -4,7 +4,6 @@ from torch.utils import data
 # add ground_truths
 class DataSet(data.Dataset):
     def __init__(self, list_IDS, data_dir, transform=None):
-        # self.ground_truths = ground_truths
         self.list_IDS = list_IDS
         self.data_dir = data_dir
         self.transform = transform
