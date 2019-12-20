@@ -67,19 +67,19 @@ def crop_data(path_gt, new_gt_dir, padding=5, file_size=30):
         for j in range(0, data.shape[0] - file_size, padding):
             new_file = data[j:j + file_size]
             if i < 10:
-                np.save(new_gt_dir + 'CGT_0000' + str(i), new_file)
+                np.save(new_gt_dir + '/CGT_0000' + str(i), new_file)
                 i += 1
             elif i < 100:
-                np.save(new_gt_dir + 'CGT_000' + str(i), new_file)
+                np.save(new_gt_dir + '/CGT_000' + str(i), new_file)
                 i += 1
             elif i < 1000:
-                np.save(new_gt_dir + 'CGT_00' + str(i), new_file)
+                np.save(new_gt_dir + '/CGT_00' + str(i), new_file)
                 i += 1
             elif i < 10000:
-                np.save(new_gt_dir + 'CGT_0' + str(i), new_file)
+                np.save(new_gt_dir + '/CGT_0' + str(i), new_file)
                 i += 1
             else:
-                np.save(new_gt_dir + 'CGT_' + str(i), new_file)
+                np.save(new_gt_dir + '/CGT_' + str(i), new_file)
                 i += 1
 
 
@@ -339,3 +339,8 @@ def normalize_series(time_series_tensor, mean_pose, data_max_val):
         time_series_tensor_copy[i] -= mean_pose
     time_series_tensor_copy = time_series_tensor_copy / data_max_val
     return time_series_tensor_copy
+
+
+crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_data',
+          new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data',
+          padding=1, file_size=200)

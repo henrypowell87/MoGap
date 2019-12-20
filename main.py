@@ -17,7 +17,7 @@ from functions import load_data, normalize_series, apply_missing, find_translate
 # set script params here
 architecture = 'BdLSTMAE'
 path_to_ground_truth = '/home/henryp/PycharmProjects/MoGap/ground_truth_data'
-batch_size = 32
+batch_size = 64
 params = {'batch_size': batch_size,
           'shuffle': True,
           'num_workers': 6}
@@ -58,7 +58,7 @@ testing_generator = data.DataLoader(testing_set, **params)
 
 # load the network class
 # input size is the number of features in your input data
-net = BdLSTMAE(input_size=30, hidden_size=50, num_layers=2)
+net = BdLSTMAE(input_size=30, hidden_size=200, num_layers=1)
 net = net.cuda()
 
 if train_network:
@@ -108,7 +108,7 @@ if train_network:
             optimizer.step()
         scheduler.step(loss)
 
-        print('epoch [{}/{}], loss:{:.6f}'
+        print('epoch [{}/{}], loss:{:.8f}'
               .format(epoch + 1, max_epochs, loss.data.item()))
         loss_values.append(loss.data.item())
     torch.save(net.state_dict(), PATH)
@@ -139,7 +139,7 @@ with torch.no_grad():
         outputs = net(local_batch_missing)
         loss = criterion(local_batch, outputs)
 
-    print('Testing Loss:{:.4f}'.format(loss.data.item()))
+    print('Testing Loss:{:.8f}'.format(loss.data.item()))
 
 
 
