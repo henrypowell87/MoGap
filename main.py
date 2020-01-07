@@ -2,7 +2,7 @@
 Author: Henry Powell
 Institution: Institute of Neuroscience and Psychology, Glasgow University, Scotland.
 
-This high level script will train a denoising autoencoder on a given data set. Different autoencoder models
+High level script to train a denoising autoencoder on a given data set. Different autoencoder models
 can be imported from the 'autoencoder_architectures' directory.
 """
 
@@ -75,7 +75,7 @@ if train_network:
     for epoch in range(max_epochs):
         for local_batch in training_generator:
 
-            # these code chunks save examples from the training so it is possible to see the change in behvaviour over
+            # these code chunks save examples from the training so it is possible to see the change in behvaiour over
             # the training if so desierd
             if epoch % 10 == 0:
                 local_batch_copy = local_batch.clone()
@@ -83,6 +83,8 @@ if train_network:
 
             # preprocess data
             local_batch = local_batch.float()
+            print(local_batch.size())
+            print(type(local_batch))
             local_batch = normalize_series(local_batch, mean_pose=mean_pose, data_max_val=max_val)
             local_batch_missing = apply_missing(time_series_tensor=local_batch, max_erasures=5, max_gap_size=10)
 

@@ -341,6 +341,6 @@ def normalize_series(time_series_tensor, mean_pose, data_max_val):
     return time_series_tensor_copy
 
 
-crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_data',
-          new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data',
-          padding=1, file_size=200)
+# crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_data',
+#           new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data',
+#           padding=1, file_size=200)
