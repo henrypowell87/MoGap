@@ -11,6 +11,60 @@ import os
 import numpy as np
 from pathlib import Path
 from random import shuffle
+from scipy.signal import savgol_filter
+
+
+def filter_batch(data_dir='', new_dir=''):
+    """
+    Filters a directory of numpy arrays converting them to torch.tensors and filtering them using a savitsky golay
+    filter
+    :param data_dir: path to data files
+    :param new_dir: path where filtered tensors are to be saved
+    """
+    directory = Path(data_dir)
+    files = [p for p in directory.iterdir() if p.is_file() and str(p).endswith('.npy')]
+    files.sort()
+
+    n = 1
+    for file in files:
+        data = np.load(file)
+        data = torch.as_tensor(data, dtype=torch.float)
+        filtered_tensor = filter_tensor(data, window_length=31, polyorder=5)
+        torch.save(filtered_tensor, new_dir + 'sav_filt_tensor_' + str(n) + '.pt')
+        n += 1
+
+
+def filter_tensor(tensor, window_length=201, polyorder=5):
+    """
+    Returns a filtered version of a time series tensor using a Savitsky-Golay. Each column of each sub tensor
+    is filtered in turn using the window_length and polyorder params.
+    :param tensor: input time_series tensor
+    :param window_length: size of moving window
+    :param polyorder: order of polynomial used to fit the window of data
+    :return:
+    """
+    assert isinstance(tensor, torch.Tensor)
+
+    tensor_copy = tensor.clone()
+    filtered = torch.Tensor()
+    if len(tensor.size()) == 3:
+        for i in range(tensor.size(0)):
+            filtered_sub_tensor = torch.Tensor()
+            for j in range(tensor.size(2)):
+                filtered_col = savgol_filter(tensor_copy[i][:, j], window_length=window_length, polyorder=polyorder)
+                filtered_col = torch.Tensor(filtered_col)
+                filtered_sub_tensor = torch.cat((filtered_sub_tensor, filtered_col.unsqueeze(0)), axis=0)
+            filtered_sub_tensor = torch.transpose(filtered_sub_tensor, 1, 0)
+            filtered = torch.cat((filtered, filtered_sub_tensor.unsqueeze(0)), axis=0)
+
+    elif len(tensor.size()) == 2:
+        filtered = torch.Tensor()
+        for j in range(tensor.size(1)):
+            filtered_col = savgol_filter(tensor_copy[:, j], window_length=window_length, polyorder=polyorder)
+            filtered_col = torch.Tensor(filtered_col)
+            filtered = torch.cat((filtered, filtered_col.unsqueeze(0)), axis=0)
+        filtered = torch.transpose(filtered, 1, 0)
+    return filtered
 
 
 def load_data(ground_truth_dir):
@@ -39,15 +93,15 @@ def load_data(ground_truth_dir):
 
 def crop_data(path_gt, new_gt_dir, padding=5, file_size=30):
     """
-    Given a path to a dataset of motion capture files, this function will split the files into a larger data set by
-    taking slices of length 'file_size' through a moving window with a given padding size between each slice.
+    Given a path to a dataset of motion capture files in .csv format, this function will split the files into a
+    larger data set by taking slices of length 'file_size' through a moving window with a given
+    padding size between each slice.
     :param path_gt: Path to ground truth data (with no missing markers)
     :param new_gt_dir: Path to where the new dataset of slices will be stored.
     :param padding: How many time steps to move the moving window after taking a slice.
     (it's better if this is a smaller number).
     :param file_size: The number of time steps to take in each slice. Rough guide for LSTM training suggests 150-250
     time steps to avoid problems during training.
-    :return:
     """
     assert isinstance(path_gt, str)
     assert isinstance(new_gt_dir, str)
@@ -60,26 +114,24 @@ def crop_data(path_gt, new_gt_dir, padding=5, file_size=30):
 
     i = 1
     for file in files_gt:
-        data = pd.read_csv(file, index_col=[0])
-        if data.shape[1] == 31:
-            data = data.drop(data.columns[30], axis=1)
+        data = torch.load(file)
         data = data[:(data.shape[0] - (data.shape[0] % padding))]
         for j in range(0, data.shape[0] - file_size, padding):
             new_file = data[j:j + file_size]
             if i < 10:
-                np.save(new_gt_dir + '/CGT_0000' + str(i), new_file)
+                torch.save(new_file, new_gt_dir + '/CGT_0000' + str(i) + '.pt')
                 i += 1
             elif i < 100:
-                np.save(new_gt_dir + '/CGT_000' + str(i), new_file)
+                torch.save(new_file, new_gt_dir + '/CGT_000' + str(i) + '.pt')
                 i += 1
             elif i < 1000:
-                np.save(new_gt_dir + '/CGT_00' + str(i), new_file)
+                torch.save(new_file, new_gt_dir + '/CGT_00' + str(i) + '.pt')
                 i += 1
             elif i < 10000:
-                np.save(new_gt_dir + '/CGT_0' + str(i), new_file)
+                torch.save(new_file, new_gt_dir + '/CGT_0' + str(i) + '.pt')
                 i += 1
             else:
-                np.save(new_gt_dir + '/CGT_' + str(i), new_file)
+                torch.save(new_file, new_gt_dir + '/CGT_' + str(i) + '.pt')
                 i += 1
 
 
@@ -88,7 +140,6 @@ def remove_nan_files(path_gt):
     Given a path to a dataset of motion capture data, this function will remove any files that containing files with
     missing data
     :param path_gt: Path to dataset
-    :return:n/a
     """
     assert isinstance(path_gt, str)
 
@@ -120,13 +171,14 @@ def remove_nan_files(path_gt):
 
 def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=0.0000):
     """
-    Given a time series tensor will simulate missing markers by replacing values in the tensor with missing_val (this is
+    Given a time series tensor (torch.tensor) will simulate missing markers by replacing values in the tensor with missing_val (this is
     suggested to be something like np.nan or 0.0000).
     :param time_series_tensor: torch.Tensor containing time series data.
     :param max_erasures: The maximum number of erasures to place into the data i.e. how many times the marker "drops
     out"
     :param max_gap_size: maximum number of samples to take out for each erasure. The length of the erasure will be
     randomized between 1 and this number.
+    :param missing_val: whatvalue to use to represent missing values (recommend one of {np.nan, 0.0000})
     :return: torch.Tensor of the original array with the applied missing data.
     """
     assert isinstance(time_series_tensor, torch.Tensor)
@@ -158,19 +210,25 @@ def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=0.
         # the probability that the chosen marker will drop out a second time
         for erasure in range(np.random.randint(1, max_erasures)):
             if erasure == 0:
-                probabilities = [1 / len(start_cols) for i in start_cols]
+                if start_cols == [0]:
+                    probabilities = [1]
+                else:
+                    probabilities = [1 / len(start_cols) for i in start_cols]
             else:
-                probabilities = [(1 - update) / (len(start_cols) - 1) for i in start_cols]
+                if start_cols == [0]:
+                    probabilities = [1]
+                else:
+                    probabilities = [(1 - update) / (len(start_cols) - 1) for i in start_cols]
                 probabilities[int(previous_col / 3)] = update
             start_row = np.random.randint(index_min, index_max)
             start_col = np.random.choice(start_cols, p=probabilities, replace=True)
             erase_len = np.random.randint(1, max_gap_size)
             for i in range(erase_len):
-                for j in range(3):
-                    if start_row + i < index_max:
+                if start_row + i < index_max:
+                    for j in range(3):
                         erased_data[start_row + i][start_col + j] = missing_val
-                    elif i == index_max:
-                        continue
+                elif start_row + i == index_max:
+                    pass
             previous_col = start_col
         erased_data = erased_data.unsqueeze(0)
         missing_array = torch.cat((missing_array, erased_data))
@@ -252,27 +310,27 @@ def gap_fill(original, estimated):
     this function will fill in the gaps of the original with the estimates of those values given by the network.
     :param original: np.array of original data with missing markers.
     :param estimated: np.array of the same data estimated by the neural network.
-    :return: np.array of the original data but with the missing marker data points filled in with the network's
+    :return: torch.tensor of the original data but with the missing marker data points filled in with the network's
     estimates.
     """
     gap_filled = original.copy()
     idx = np.argwhere(np.isnan(gap_filled))
     for i in range(len(idx)):
         gap_filled[idx[i][0]][idx[i][1]] = estimated[idx[i][0]][idx[i][1]]
-    return gap_filled
+    return torch.as_tensor(gap_filled)
 
 
-def find_translated_mean_pose(num_markers=10, path='/home/henryp/PycharmProjects/MoGap/ground_truth_data',
-                              central_marker_num=4):
+def find_translated_mean_pose(num_markers=10, path='', central_marker_num=4, data_type='csv'):
     """
     Given a dataset of motion capture data will first translate all markers to a body-centered coordinate system
     by subtracting the central marker position from each marker at each timestep. Then finds the mean position over the
-    data set by taking the mean of each marker over the whole dataset. These values can be used to noramlize the
-    dataset for better reults during learning.
+    data set by taking the mean of each marker over the whole dataset. These values can be used to normalize the
+    dataset for better results during learning.
     :param num_markers: The number of markers used for data collection, this should be the same across all files.
     :param path: path to data set
     :param central_marker_num: the number of the desired marker used for translation. I.e. the number of the marker
     according to where that marker's data columns fall in the data set.
+    :param data_type: Type of data you which to use. Should be one of {'csv', 'torch'}
     :return: torch.Tensor with the mean pose across the data set.
     """
     # original data set path
@@ -281,45 +339,85 @@ def find_translated_mean_pose(num_markers=10, path='/home/henryp/PycharmProjects
     directory = Path(path)
     files = [p for p in directory.iterdir() if p.is_file() and not str(p).endswith('tore')]
 
-    # keep track of markers for calculating mean pose
-    markers = np.array([0.0 for i in range(num_coords)])
+    if data_type == 'csv':
+        # keep track of markers for calculating mean pose
+        markers = np.array([0.0 for i in range(num_coords)])
+        for file in files:
+            data = np.genfromtxt(file, delimiter=',')
+            data = data[1:][:, 1:-1]
 
-    for file in files:
-        data = np.genfromtxt(file, delimiter=',')
-        data = data[1:][:, 1:-1]
+            center_x_idx = 3 * (central_marker_num - 1)
+            # translate data to collar centered coordinate system
+            for i in range(data.shape[0]):
+                collar_coords = data[i][center_x_idx:center_x_idx + 3]
+                for j in range(0, data.shape[1], 3):
+                    data[i][j:j + 3] -= collar_coords
 
-        center_x_idx = 3 * (central_marker_num - 1)
-        # translate data to collar centered coordinate system
-        for i in range(data.shape[0]):
-            collar_coords = data[i][center_x_idx:center_x_idx + 3]
-            for j in range(0, data.shape[1], 3):
-                data[i][j:j + 3] -= collar_coords
+            # calculate running sum of mean marker positions
+            for k in range(data.shape[1]):
+                markers[k] += np.mean(data[:, k])
 
-        # calculate running sum of mean marker positions
-        for k in range(data.shape[1]):
-            markers[k] += np.mean(data[:, k])
+    elif data_type == 'torch':
+        # keep track of markers for calculating mean pose
+        markers = torch.Tensor([0.0 for i in range(num_coords)])
+        for file in files:
+            data = torch.load(file)
+            center_x_idx = 3 * (central_marker_num - 1)
+            # translate data to collar centered coordinate system
+            for i in range(data.shape[0]):
+                collar_coords = data[i][center_x_idx:center_x_idx + 3]
+                for j in range(0, data.shape[1], 3):
+                    data[i][j:j + 3] -= collar_coords
+
+            # calculate running sum of mean marker positions
+            for k in range(data.shape[1]):
+                markers[k] += torch.mean(data[:, k])
 
     # divide by number of files to get mean pose
     mean_pose = markers / len(files)
-    return torch.tensor(mean_pose)
+    if data_type == 'numpy':
+        return torch.as_tensor(mean_pose)
+    elif data_type == 'torch':
+        return mean_pose
 
 
-def find_max_val(path='/home/henryp/PycharmProjects/MoGap/ground_truth_data'):
+def filter_csv(data_dir='', new_data_dir=''):
+    """
+    Converts a directrory of csv files into torch.tensors
+    :param data_dir: path to data directory
+    :param new_data_dir: path to where the new tensors will be stored
+    """
+
+    directory = Path(data_dir)
+    files = [p for p in directory.iterdir() if p.is_file() and not str(p).endswith('tore')]
+
+    for file in files:
+        name = str(file)[-12:]
+        data = np.genfromtxt(file, delimiter=',')
+        data = data[:, 1:31]
+        data = data[1:]
+        data = torch.as_tensor(data)
+        data = filter_tensor(data, window_length=101, polyorder=5)
+        torch.save(data, new_data_dir + name + '.pt')
+
+
+def find_max_val(path=''):
     """
     Given a path to directory containing a dataset of motion capture data will return the maximum value from the
     whole dataset.
     :param path: Path to dataset.
-    :return: Largest value from dataset.
+    :param data_type: Type of data to be processed.
+    :return: Largest value from dataset as a torch tensor.
     """
     directory = Path(path)
     files = [p for p in directory.iterdir() if p.is_file() and not str(p).endswith('tore')]
+
     max_val = []
     for file in files:
-        data = np.genfromtxt(file, delimiter=',')
-        data = data[1:][1:-1]
-        max = np.nanmax(data)
+        data = torch.load(file)
+        max = torch.max(data)
         max_val.append(max)
-    return np.max(max_val)
+    return torch.max(torch.as_tensor(max_val))
 
 
 def normalize_series(time_series_tensor, mean_pose, data_max_val):
@@ -341,6 +439,9 @@ def normalize_series(time_series_tensor, mean_pose, data_max_val):
     return time_series_tensor_copy
 
 
-# crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_data',
-#           new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data',
-#           padding=1, file_size=200)
+# crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_tensors_filtered',
+#           new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_tensors_filtered',
+#           padding=1, file_size=64, data_type='torch')
+
+# filter_batch(data_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data/',
+#              new_dir='/home/henryp/PycharmProjects/MoGap/filtered_tensors/')
