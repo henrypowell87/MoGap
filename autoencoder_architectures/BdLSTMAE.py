@@ -1,6 +1,5 @@
 import torch.nn as nn
 
-
 class EncoderBdLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
         super(EncoderBdLSTM, self).__init__()

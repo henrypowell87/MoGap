@@ -9,9 +9,10 @@ can be imported from the 'autoencoder_architectures' directory.
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+import numpy as np
 from torch.utils import data
 from data_loader import DataSet
-from autoencoder_architectures.LSTMAE import LSTMAE
+from autoencoder_architectures.CNNLSTM import CNNLSTMAE
 from functions import load_data, normalize_series, apply_missing, find_translated_mean_pose, find_max_val, filter_tensor
 
 # set script params here
@@ -32,15 +33,15 @@ train_network = True
 # normalize to the coordinates of (a waist/hip marker is suggested for full body data; collar bone for upper body)
 mean_pose = find_translated_mean_pose(num_markers=10,
                                       path='/home/henryp/PycharmProjects/MoGap/ground_truth_tensors_filtered/',
-                                      central_marker_num=4)
+                                      central_marker_num=4, data_type='torch')
 # this function finds the max value across you data set for the purposes of -1,1 normalization
 max_val = find_max_val(path='/home/henryp/PycharmProjects/MoGap/ground_truth_tensors_filtered/')
 
 # where to save the saved network weights after training
 PATH = './MoGapSaveState.pth'
 
-# path to data that has been cropped into smaller like-sized chucks
-cropped_ground_truth_path = '/home/henryp/PycharmProjects/MoGap/cropped_tensors_filtered'
+# path to data that has been cropped into smaller same-sized chucks
+cropped_ground_truth_path = '/home/henryp/Desktop/cropped_tensors_filtered/'
 
 if run_on == 'GPU':
     device = torch.device('cuda:0')
@@ -59,12 +60,13 @@ testing_generator = data.DataLoader(testing_set, **params)
 
 # load the network class
 # input size is the number of features in your input data
-net = LSTMAE(input_size=30,
-             enc_first_size=20,
-             enc_second_size=10,
-             dec_first_size=20,
-             output_size=30,
-             num_layers=1)
+net = CNNLSTMAE(num_frames=64,
+                input_size=17,
+                enc_first_size=15,
+                enc_second_size=10,
+                dec_first_size=15,
+                output_size=30,
+                num_layers=1)
 net = net.cuda()
 
 if train_network:
@@ -89,7 +91,6 @@ if train_network:
 
             # preprocess data
             local_batch = local_batch.float()
-            local_batch = filter_tensor(local_batch, window_length=31, polyorder=5)
             local_batch = normalize_series(local_batch, mean_pose=mean_pose, data_max_val=max_val)
             local_batch_missing = apply_missing(time_series_tensor=local_batch, max_erasures=5, max_gap_size=10)
 
@@ -109,13 +110,14 @@ if train_network:
                 estimated = outputs.clone()
                 torch.save(estimated, './examples/' + 'estimated_epoch' + str(epoch) + '.pt')
 
-            # backwards step
+            # backwards step, RMSE loss
             loss = criterion(outputs, local_batch)
+            loss = torch.sqrt(loss)
             loss.backward()
             optimizer.step()
         scheduler.step(loss)
 
-        print('epoch [{}/{}], loss:{:.8f}'
+        print('epoch [{}/{}], RMSE_loss:{:.8f}'
               .format(epoch + 1, max_epochs, loss.data.item()))
         loss_values.append(loss.data.item())
 

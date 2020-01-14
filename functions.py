@@ -119,15 +119,18 @@ def crop_data(path_gt, new_gt_dir, padding=5, file_size=30):
         for j in range(0, data.shape[0] - file_size, padding):
             new_file = data[j:j + file_size]
             if i < 10:
-                torch.save(new_file, new_gt_dir + '/CGT_0000' + str(i) + '.pt')
+                torch.save(new_file, new_gt_dir + '/CGT_00000' + str(i) + '.pt')
                 i += 1
             elif i < 100:
-                torch.save(new_file, new_gt_dir + '/CGT_000' + str(i) + '.pt')
+                torch.save(new_file, new_gt_dir + '/CGT_0000' + str(i) + '.pt')
                 i += 1
             elif i < 1000:
-                torch.save(new_file, new_gt_dir + '/CGT_00' + str(i) + '.pt')
+                torch.save(new_file, new_gt_dir + '/CGT_000' + str(i) + '.pt')
                 i += 1
             elif i < 10000:
+                torch.save(new_file, new_gt_dir + '/CGT_00' + str(i) + '.pt')
+                i += 1
+            elif i < 100000:
                 torch.save(new_file, new_gt_dir + '/CGT_0' + str(i) + '.pt')
                 i += 1
             else:
@@ -441,7 +444,7 @@ def normalize_series(time_series_tensor, mean_pose, data_max_val):
 
 # crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_tensors_filtered',
 #           new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_tensors_filtered',
-#           padding=1, file_size=64, data_type='torch')
+#           padding=1, file_size=64)
 
 # filter_batch(data_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data/',
 #              new_dir='/home/henryp/PycharmProjects/MoGap/filtered_tensors/')
