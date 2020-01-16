@@ -9,14 +9,13 @@ can be imported from the 'autoencoder_architectures' directory.
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-import numpy as np
 from torch.utils import data
 from data_loader import DataSet
 from autoencoder_architectures.CNNLSTM import CNNLSTMAE
 from functions import load_data, normalize_series, apply_missing, find_translated_mean_pose, find_max_val, filter_tensor
 
 # set script params here
-architecture = 'multi_layer_LSTMAE'
+architecture = 'CNNLSTMAE'
 # path_to_ground_truth = '/home/henryp/PycharmProjects/MoGap/filtered_tensors'
 batch_size = 64
 params = {'batch_size': batch_size,
@@ -60,13 +59,7 @@ testing_generator = data.DataLoader(testing_set, **params)
 
 # load the network class
 # input size is the number of features in your input data
-net = CNNLSTMAE(num_frames=64,
-                input_size=17,
-                enc_first_size=15,
-                enc_second_size=10,
-                dec_first_size=15,
-                output_size=30,
-                num_layers=1)
+net = CNNLSTMAE(num_frames=64, num_layers=1)
 net = net.cuda()
 
 if train_network:
@@ -76,7 +69,7 @@ if train_network:
     optimizer = torch.optim.Adam(net.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                            patience=5, verbose=True)
-    # track loss per epcoh to plot how the network learns over the number of epochs
+    # track loss per epoch to plot how the network learns over the number of epochs
     loss_values = []
 
     # training loop
@@ -112,20 +105,19 @@ if train_network:
 
             # backwards step, RMSE loss
             loss = criterion(outputs, local_batch)
-            loss = torch.sqrt(loss)
             loss.backward()
             optimizer.step()
         scheduler.step(loss)
 
         print('epoch [{}/{}], RMSE_loss:{:.8f}'
-              .format(epoch + 1, max_epochs, loss.data.item()))
+              .format(epoch + 1, max_epochs, torch.sqrt(loss.data)))
         loss_values.append(loss.data.item())
 
     torch.save(net.state_dict(), PATH)
 
     # plot loss over training
     plt.plot([i for i in range(max_epochs)], loss_values)
-    plt.title(architecture + ' loss || Final loss: ' + str(loss_values[-1]))
+    plt.title(architecture + ' loss || Final RMSEloss: ' + str(loss_values[-1]))
     plt.savefig(architecture + '_loss')
 
 
@@ -149,7 +141,7 @@ with torch.no_grad():
         outputs = net(local_batch_missing)
         loss = criterion(local_batch, outputs)
 
-    print('Testing Loss:{:.8f}'.format(loss.data.item()))
+    print('Testing RMSELoss:{:.8f}'.format(torch.sqrt(loss.data)))
 
 
 
