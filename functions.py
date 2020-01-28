@@ -91,7 +91,7 @@ def load_data(ground_truth_dir):
     return partition, training_set_size
 
 
-def crop_data(path_gt, new_gt_dir, padding=5, file_size=30):
+def crop_data(path_gt, new_gt_dir, padding=5, file_size=64):
     """
     Given a path to a dataset of motion capture files in .csv format, this function will split the files into a
     larger data set by taking slices of length 'file_size' through a moving window with a given
@@ -239,6 +239,57 @@ def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=0.
     return missing_array
 
 
+def apply_missing_CMU_val(time_series_tensor, erasures_perc=10, missing_val=0.0000):
+    """
+    Given a time series tensor (torch.tensor) will simulate missing markers by replacing values in the tensor with missing_val (this is
+    suggested to be something like np.nan or 0.0000).
+    :param time_series_tensor: torch.Tensor containing time series data.
+    :param max_erasures: The maximum number of erasures to place into the data i.e. how many times the marker "drops
+    out"
+    :param max_gap_size: maximum number of samples to take out for each erasure. The length of the erasure will be
+    randomized between 1 and this number.
+    :param missing_val: whatvalue to use to represent missing values (recommend one of {np.nan, 0.0000})
+    :param erasures_perc: percentageof markers to experience drop out
+    :return: torch.Tensor of the original array with the applied missing data.
+    """
+    assert isinstance(time_series_tensor, torch.Tensor)
+
+    if len(time_series_tensor.size()) < 3:
+        time_series_tensor_copy = time_series_tensor.clone()
+        time_series_tensor_copy = time_series_tensor_copy.unsqueeze(0)
+    else:
+        time_series_tensor_copy = time_series_tensor.clone()
+
+    time_series_tensor_copy = time_series_tensor_copy
+    missing_array = torch.Tensor()
+    for k in range(time_series_tensor_copy.size(0)):
+        erased_data = time_series_tensor_copy[k]
+
+        # Pick starting index for erasure
+        index_min = 0
+        index_max = erased_data.size(0)
+
+        # Pick starting column for erasure (must be x dim column)
+        cols_min = 0
+        cols_max = erased_data.size(1)
+        start_cols = [i for i in range(cols_min, cols_max, 3)]
+
+        erasures = np.random.choice(start_cols, round((erasures_perc / 100) * len(start_cols)), replace=False)
+
+        # this loop simulates missing markers by erasing x,y, and z data from given markers
+        for erasure in erasures:
+            erase_len = int(np.random.normal(10, 5))
+            start_row = np.random.randint(index_min, index_max-erase_len)
+            start_col = erasure
+            for i in range(erase_len):
+                for j in range(3):
+                    erased_data[start_row + i][start_col + j] = missing_val
+        erased_data = erased_data.unsqueeze(0)
+        missing_array = torch.cat((missing_array, erased_data))
+
+    return missing_array
+
+
 def nan_to_zero(tensor):
     """
     Given a torch.Tensor containing nan vaules, will convert all of those nan values to 0.0000.
@@ -347,14 +398,13 @@ def find_translated_mean_pose(num_markers=10, path='', central_marker_num=4, dat
         markers = np.array([0.0 for i in range(num_coords)])
         for file in files:
             data = np.genfromtxt(file, delimiter=',')
-            data = data[1:][:, 1:-1]
-
+            data = data[1:]
             center_x_idx = 3 * (central_marker_num - 1)
-            # translate data to collar centered coordinate system
+            # translate data to centered coordinate system
             for i in range(data.shape[0]):
-                collar_coords = data[i][center_x_idx:center_x_idx + 3]
+                centered_coords = data[i][center_x_idx:center_x_idx + 3].copy()
                 for j in range(0, data.shape[1], 3):
-                    data[i][j:j + 3] -= collar_coords
+                    data[i][j:j + 3] -= centered_coords
 
             # calculate running sum of mean marker positions
             for k in range(data.shape[1]):
@@ -368,9 +418,9 @@ def find_translated_mean_pose(num_markers=10, path='', central_marker_num=4, dat
             center_x_idx = 3 * (central_marker_num - 1)
             # translate data to collar centered coordinate system
             for i in range(data.shape[0]):
-                collar_coords = data[i][center_x_idx:center_x_idx + 3]
+                centered_coords = data[i][center_x_idx:center_x_idx + 3]
                 for j in range(0, data.shape[1], 3):
-                    data[i][j:j + 3] -= collar_coords
+                    data[i][j:j + 3] -= centered_coords
 
             # calculate running sum of mean marker positions
             for k in range(data.shape[1]):
@@ -378,9 +428,9 @@ def find_translated_mean_pose(num_markers=10, path='', central_marker_num=4, dat
 
     # divide by number of files to get mean pose
     mean_pose = markers / len(files)
-    if data_type == 'numpy':
+    if data_type == 'torch':
         return torch.as_tensor(mean_pose)
-    elif data_type == 'torch':
+    elif data_type == 'csv':
         return mean_pose
 
 
@@ -395,12 +445,13 @@ def filter_csv(data_dir='', new_data_dir=''):
     files = [p for p in directory.iterdir() if p.is_file() and not str(p).endswith('tore')]
 
     for file in files:
-        name = str(file)[-12:]
+        name = str(file)[-10:-4]
+        if name[0] == '/':
+            name = name[1:]
         data = np.genfromtxt(file, delimiter=',')
-        data = data[:, 1:31]
         data = data[1:]
         data = torch.as_tensor(data)
-        data = filter_tensor(data, window_length=101, polyorder=5)
+        data = filter_tensor(data, window_length=47, polyorder=5)
         torch.save(data, new_data_dir + name + '.pt')
 
 
@@ -442,9 +493,18 @@ def normalize_series(time_series_tensor, mean_pose, data_max_val):
     return time_series_tensor_copy
 
 
-# crop_data(path_gt='/home/henryp/PycharmProjects/MoGap/ground_truth_tensors_filtered',
-#           new_gt_dir='/home/henryp/PycharmProjects/MoGap/cropped_tensors_filtered',
-#           padding=1, file_size=64)
+def translate_to_marker(data, origin_marker=None):
+    """
+    Given a numpy array of marker data will return that marker data with all makers
+    translated to a origin maker.
+    :param data: 2D NParray containing your timeseries data
+    :param origin_marker: The marker that will become the origin
+    :return: Data translated to new origin given by origin_marker.
+    """
 
-# filter_batch(data_dir='/home/henryp/PycharmProjects/MoGap/cropped_ground_truth_data/',
-#              new_dir='/home/henryp/PycharmProjects/MoGap/filtered_tensors/')
+    center_x_idx = 3 * (origin_marker - 1)
+
+    for row in range(data.shape[0]):
+        origin = data[row][center_x_idx:center_x_idx + 3].copy()
+        for m in range(0, 123, 3):
+            data[row][m:m + 3] -= origin
