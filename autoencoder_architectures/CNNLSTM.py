@@ -1,6 +1,4 @@
 import torch.nn as nn
-from torch import flatten
-
 
 class EncoderCNNLSTM(nn.Module):
     def __init__(self, num_frames):
@@ -35,17 +33,17 @@ class DecoderCNNLSTM(nn.Module):
         super(DecoderCNNLSTM, self).__init__()
         self.num_layers = num_layers
 
-        self.LSTM_dec_one = nn.LSTM(input_size=9,
-                                    hidden_size=15,
+        self.LSTM_dec_one = nn.LSTM(input_size=102,
+                                    hidden_size=50,
                                     num_layers=num_layers,
                                     batch_first=True)
 
-        self.LSTM_dec_two = nn.LSTM(input_size=15,
-                                    hidden_size=20,
+        self.LSTM_dec_two = nn.LSTM(input_size=50,
+                                    hidden_size=102,
                                     num_layers=num_layers,
                                     batch_first=True)
 
-        self.dcnn = nn.ConvTranspose1d(in_channels=256, out_channels=64, kernel_size=11)
+        self.dcnn = nn.ConvTranspose1d(in_channels=256, out_channels=64, kernel_size=22)
 
     def forward(self, x):
         x, (hidden, cell) = self.LSTM_dec_one(x, None)

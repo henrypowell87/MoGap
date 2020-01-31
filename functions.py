@@ -67,28 +67,47 @@ def filter_tensor(tensor, window_length=201, polyorder=5):
     return filtered
 
 
-def load_data(ground_truth_dir):
+def load_data(ground_truth_dir, type='train'):
     """
     Loads motion capture data from a given directory and splits it into training and test datasets indexed with a
     dictionary.
     :param ground_truth_dir: Path to motion capture dataset
+    :param type: The type of set you are loading: 'trian', 'test', or 'val'
     :return: Returns a dictionary that maps train and test keys to lists of filenames of each element. Also return the
     size of the training set.
     """
-    ground_truth_names = os.listdir(ground_truth_dir)
-    ground_truth_names.sort()
 
-    shuffle(ground_truth_names)
+    # if type == 'train':
+    names = []
+    for i in range(1, 35):
+        ground_truth_names = os.listdir(ground_truth_dir + str(i))
+        ground_truth_names = [str(i) + '/' + k for k in ground_truth_names]
+        ground_truth_names.sort()
+        shuffle(ground_truth_names)
+        names.append(ground_truth_names)
 
-    idx = int(0.8*len(ground_truth_names))
-    train_names = ground_truth_names[:idx]
-    test_names = ground_truth_names[idx:]
+    names = [i for sublist in names for i in sublist]
+    partition = {'train': names}
 
-    partition = {'train': train_names, 'test': test_names}
+    # elif type == 'test':
+    #     names = []
+    #     ground_truth_names = os.listdir(ground_truth_dir)
+    #     ground_truth_names.sort()
+    #     shuffle(ground_truth_names)
+    #     names.append(ground_truth_names)
+    #     partition = {'test': names}
+    #
+    # elif type == 'val':
+    #     names = []
+    #     ground_truth_names = os.listdir(ground_truth_dir)
+    #     ground_truth_names.sort()
+    #     shuffle(ground_truth_names)
+    #     names.append(ground_truth_names)
+    #     partition = {'val': names}
 
-    training_set_size = len(ground_truth_names)
+    set_size = len(names)
 
-    return partition, training_set_size
+    return partition, set_size
 
 
 def crop_data(path_gt, new_gt_dir, padding=5, file_size=64):
@@ -108,34 +127,53 @@ def crop_data(path_gt, new_gt_dir, padding=5, file_size=64):
 
     directory_gt = Path(path_gt)
 
-    files_gt = [p for p in directory_gt.iterdir() if p.is_file() and not str(p).endswith('.DS_Store')]
+    files_gt = [p for p in directory_gt.iterdir() if p.is_file() and str(p).endswith('.csv')]
 
     files_gt.sort()
 
+    num_counter = 0
+
+    file_num = 1
+
     i = 1
     for file in files_gt:
-        data = torch.load(file)
+        data = np.genfromtxt(file, delimiter=',')
         data = data[:(data.shape[0] - (data.shape[0] % padding))]
         for j in range(0, data.shape[0] - file_size, padding):
+
             new_file = data[j:j + file_size]
             if i < 10:
-                torch.save(new_file, new_gt_dir + '/CGT_00000' + str(i) + '.pt')
+                np.save(new_gt_dir + '/' + 'sliced_' + str(file_num) + '/CGT_000000' + str(i) + '.npy', arr=new_file)
                 i += 1
+                num_counter += 1
             elif i < 100:
-                torch.save(new_file, new_gt_dir + '/CGT_0000' + str(i) + '.pt')
+                np.save(new_gt_dir + '/' +'sliced_' + str(file_num) + '/CGT_00000' + str(i) + '.npy', arr=new_file)
                 i += 1
+                num_counter += 1
             elif i < 1000:
-                torch.save(new_file, new_gt_dir + '/CGT_000' + str(i) + '.pt')
+                np.save(new_gt_dir + '/' +'sliced_' + str(file_num) + '/CGT_0000' + str(i) + '.npy', arr=new_file)
                 i += 1
+                num_counter += 1
             elif i < 10000:
-                torch.save(new_file, new_gt_dir + '/CGT_00' + str(i) + '.pt')
+                np.save(new_gt_dir + '/' +'sliced_' + str(file_num) + '/CGT_000' + str(i) + '.npy', arr=new_file)
                 i += 1
+                num_counter += 1
             elif i < 100000:
-                torch.save(new_file, new_gt_dir + '/CGT_0' + str(i) + '.pt')
+                np.save(new_gt_dir + '/' +'sliced_' + str(file_num) + '/CGT_00' + str(i) + '.npy', arr=new_file)
                 i += 1
+                num_counter += 1
+            elif i < 1000000:
+                np.save(new_gt_dir + '/' +'sliced_' + str(file_num) + '/CGT_0' + str(i) + '.npy', arr=new_file)
+                i += 1
+                num_counter += 1
             else:
-                torch.save(new_file, new_gt_dir + '/CGT_' + str(i) + '.pt')
+                np.save(new_gt_dir + '/' +'sliced_' + str(file_num) + '/CGT_' + str(i) + '.npy', arr=new_file)
                 i += 1
+                num_counter += 1
+
+            if num_counter == 10000:
+                file_num += 1
+                num_counter = 0
 
 
 def remove_nan_files(path_gt):
@@ -239,7 +277,7 @@ def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=0.
     return missing_array
 
 
-def apply_missing_CMU_val(time_series_tensor, erasures_perc=10, missing_val=0.0000):
+def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.0000):
     """
     Given a time series tensor (torch.tensor) will simulate missing markers by replacing values in the tensor with missing_val (this is
     suggested to be something like np.nan or 0.0000).
@@ -266,7 +304,6 @@ def apply_missing_CMU_val(time_series_tensor, erasures_perc=10, missing_val=0.00
         erased_data = time_series_tensor_copy[k]
 
         # Pick starting index for erasure
-        index_min = 0
         index_max = erased_data.size(0)
 
         # Pick starting column for erasure (must be x dim column)
@@ -274,12 +311,14 @@ def apply_missing_CMU_val(time_series_tensor, erasures_perc=10, missing_val=0.00
         cols_max = erased_data.size(1)
         start_cols = [i for i in range(cols_min, cols_max, 3)]
 
-        erasures = np.random.choice(start_cols, round((erasures_perc / 100) * len(start_cols)), replace=False)
+        num_markers = round((erasures_perc / 100) * len(start_cols))
+
+        markers_to_erase = np.random.choice(start_cols, size=num_markers)
 
         # this loop simulates missing markers by erasing x,y, and z data from given markers
-        for erasure in erasures:
-            erase_len = int(np.random.normal(10, 5))
-            start_row = np.random.randint(index_min, index_max-erase_len)
+        for erasure in markers_to_erase:
+            erase_len = abs(int(np.random.normal(10, 5)))
+            start_row = np.random.randint(0, index_max-erase_len)
             start_col = erasure
             for i in range(erase_len):
                 for j in range(3):
@@ -290,21 +329,7 @@ def apply_missing_CMU_val(time_series_tensor, erasures_perc=10, missing_val=0.00
     return missing_array
 
 
-def nan_to_zero(tensor):
-    """
-    Given a torch.Tensor containing nan vaules, will convert all of those nan values to 0.0000.
-    :param tensor: torch.Tensor containg nan data.
-    :return: a copy of the original tensor with nans replaced by 0.000
-    """
-    assert isinstance(tensor, torch.Tensor)
-
-    tensor_copy = tensor.clone()
-    tensor_copy = tensor_copy.float()
-    tensor_copy[torch.isnan(tensor_copy)] = 0.0000
-    return tensor_copy
-
-
-def split(data, index_cols=True, size=30, padding=5, result_dim=(0, 30, 30)):
+def split(data, index_cols=True, size=None, padding=None, result_dim=(0, 30, 30)):
     """
     Given a motion capture data file this function will split the files into a number of subfiles of a given size. This
     should be used to provide unseen data with missing markers to a trained network to fill in the gaps. Split will
@@ -374,67 +399,33 @@ def gap_fill(original, estimated):
     return torch.as_tensor(gap_filled)
 
 
-def find_translated_mean_pose(num_markers=10, path='', central_marker_num=4, data_type='csv'):
+def find_mean_pose(data_directory='', num_markers=None):
     """
-    Given a dataset of motion capture data will first translate all markers to a body-centered coordinate system
-    by subtracting the central marker position from each marker at each timestep. Then finds the mean position over the
-    data set by taking the mean of each marker over the whole dataset. These values can be used to normalize the
-    dataset for better results during learning.
-    :param num_markers: The number of markers used for data collection, this should be the same across all files.
-    :param path: path to data set
-    :param central_marker_num: the number of the desired marker used for translation. I.e. the number of the marker
-    according to where that marker's data columns fall in the data set.
-    :param data_type: Type of data you which to use. Should be one of {'csv', 'torch'}
-    :return: torch.Tensor with the mean pose across the data set.
+    Given a path toa  driectory of motion capture data (with same shape) will return the mean pose over
+    the data
+    :param data_directory: Path to data
+    :param num_markers: Number of markers used for capture (this should be the same in each file)
+    :return: np.array of mean pose.
     """
-    # original data set path
-    num_coords = num_markers * 3
 
-    directory = Path(path)
-    files = [p for p in directory.iterdir() if p.is_file() and not str(p).endswith('tore')]
+    directory = Path(data_directory)
+    files = [p for p in directory.iterdir() if p.is_file() and str(p).endswith('.csv')]
+    files.sort()
 
-    if data_type == 'csv':
-        # keep track of markers for calculating mean pose
-        markers = np.array([0.0 for i in range(num_coords)])
-        for file in files:
-            data = np.genfromtxt(file, delimiter=',')
-            data = data[1:]
-            center_x_idx = 3 * (central_marker_num - 1)
-            # translate data to centered coordinate system
-            for i in range(data.shape[0]):
-                centered_coords = data[i][center_x_idx:center_x_idx + 3].copy()
-                for j in range(0, data.shape[1], 3):
-                    data[i][j:j + 3] -= centered_coords
+    mean_poses = np.empty((0, num_markers*3))
 
-            # calculate running sum of mean marker positions
-            for k in range(data.shape[1]):
-                markers[k] += np.mean(data[:, k])
+    for file in files:
+        data = np.genfromtxt(file, delimiter=',')
+        data = data[1:]
 
-    elif data_type == 'torch':
-        # keep track of markers for calculating mean pose
-        markers = torch.Tensor([0.0 for i in range(num_coords)])
-        for file in files:
-            data = torch.load(file)
-            center_x_idx = 3 * (central_marker_num - 1)
-            # translate data to collar centered coordinate system
-            for i in range(data.shape[0]):
-                centered_coords = data[i][center_x_idx:center_x_idx + 3]
-                for j in range(0, data.shape[1], 3):
-                    data[i][j:j + 3] -= centered_coords
+        mean = np.mean(data, axis=0)
 
-            # calculate running sum of mean marker positions
-            for k in range(data.shape[1]):
-                markers[k] += torch.mean(data[:, k])
+        mean_poses = np.append(mean_poses, np.expand_dims(mean, axis=0), axis=0)
 
-    # divide by number of files to get mean pose
-    mean_pose = markers / len(files)
-    if data_type == 'torch':
-        return torch.as_tensor(mean_pose)
-    elif data_type == 'csv':
-        return mean_pose
+    return np.mean(mean_poses, axis=0)
 
 
-def filter_csv(data_dir='', new_data_dir=''):
+def csv_to_tensor(data_dir='', new_data_dir=''):
     """
     Converts a directrory of csv files into torch.tensors
     :param data_dir: path to data directory
@@ -455,7 +446,7 @@ def filter_csv(data_dir='', new_data_dir=''):
         torch.save(data, new_data_dir + name + '.pt')
 
 
-def find_max_val(path=''):
+def find_tensor_max(path=''):
     """
     Given a path to directory containing a dataset of motion capture data will return the maximum value from the
     whole dataset.
@@ -472,6 +463,32 @@ def find_max_val(path=''):
         max = torch.max(data)
         max_val.append(max)
     return torch.max(torch.as_tensor(max_val))
+
+
+def find_max(path=''):
+    """
+    Given a path to a directory of time series data of the same shape in the first dimension
+    (i.e. same number of cols) will return the max value of that dataset. This can be used for
+    normalizing the data.
+    :param path: Path to dataset
+    :return: Maximum value from dataset as dtype: float.64.
+    """
+
+
+    directory = Path(path)
+    files = [p for p in directory.iterdir() if p.is_file() and str(p).endswith('.csv')]
+
+    max = 0
+
+    for file in files:
+        data = np.genfromtxt(file, delimiter=',')
+        data_max = np.nanmax(data)
+        if data_max > max:
+            max = data_max
+        else:
+            continue
+
+    return max
 
 
 def normalize_series(time_series_tensor, mean_pose, data_max_val):
