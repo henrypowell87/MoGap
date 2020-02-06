@@ -315,9 +315,12 @@ def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.
 
         markers_to_erase = np.random.choice(start_cols, size=num_markers)
 
+        max_erasure_len = 0
         # this loop simulates missing markers by erasing x,y, and z data from given markers
         for erasure in markers_to_erase:
             erase_len = abs(int(np.random.normal(10, 5)))
+            if erase_len > max_erasure_len:
+                max_erasure_len = erase_len
             start_row = np.random.randint(0, index_max-erase_len)
             start_col = erasure
             for i in range(erase_len):
@@ -326,7 +329,7 @@ def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.
         erased_data = erased_data.unsqueeze(0)
         missing_array = torch.cat((missing_array, erased_data))
 
-    return missing_array
+    return missing_array, max_erasure_len
 
 
 def split(data, index_cols=True, size=None, padding=None, result_dim=(0, 30, 30)):
@@ -525,3 +528,31 @@ def translate_to_marker(data, origin_marker=None):
         origin = data[row][center_x_idx:center_x_idx + 3].copy()
         for m in range(0, 123, 3):
             data[row][m:m + 3] -= origin
+
+def crop_to_missing(local_batch, local_batch_missing, outputs):
+    """
+    Crops elements from ground truth arrays that were made to be missing and crops the same elements
+    from the estimated array to create to n length vectors where n is the number of missing data points.
+    These two vectors can then be used to more accurate cost calculations
+    :param local_batch: batch of ground truth tensors.
+    :param local_batch_missing: batch of local_batch tensors with missing markers applied
+    :param outputs: batch of outpout tensors from the neural network.
+    :return: y, y_hat where y is ground truth values of the missing marker elements and y_hat is
+    the estimated values.
+    """
+
+    idx = np.where(local_batch_missing == 0.000)
+    idxs = list(zip(idx[0], idx[1], idx[2]))
+    idxs = [list(i) for i in idxs]
+
+    y = torch.Tensor()
+    y_hat = torch.Tensor()
+
+    for i in idxs:
+        val_x = local_batch[i[0], i[1], i[2]]
+        val_y = outputs[i[0], i[1], i[2]]
+
+        y = torch.cat((y, val_x.unsqueeze(0)))
+        y_hat = torch.cat((y_hat, val_y.unsqueeze(0)))
+
+    return y, y_hat
