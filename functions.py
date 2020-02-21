@@ -313,7 +313,7 @@ def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.
 
         num_markers = round((erasures_perc / 100) * len(start_cols))
 
-        markers_to_erase = np.random.choice(start_cols, size=num_markers)
+        markers_to_erase = np.random.choice(start_cols, size=num_markers, replace=False)
 
         max_erasure_len = 0
         # this loop simulates missing markers by erasing x,y, and z data from given markers
@@ -332,58 +332,96 @@ def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.
     return missing_array, max_erasure_len
 
 
-def split(data, index_cols=True, size=None, padding=None, result_dim=(0, 30, 30)):
+def apply_missing_fixed(time_series_tensor, gap_duration=50, num_markers=5, missing_val=0.0000):
     """
-    Given a motion capture data file this function will split the files into a number of subfiles of a given size. This
-    should be used to provide unseen data with missing markers to a trained network to fill in the gaps. Split will
-    split the data up into the appropriate sized chucks for the trained network, which can then be reassembled by
-    the merge function.
-    :param data: path to datafile
-    :param index_cols: set to true if the first row and column of you data are row and column indeces.
-    :param size: Size of the slices the data will be split into. This should equal the length of data that the network
-    was trained on.
-    :param padding: How many time steps to move the moving window after taking a slice.
-    :param result_dim: the desired resulting dimension of you slice array. This should be of shape (0, num_time_steps,
-    num_features). The zero in the first dimension is required to stack the arrays on top of one another.
-    :return: Copy of the original data. A np.array of the slices of shape (num_slices, num_time_steps, num_features)
-    where num_feautres should be the number of markers used * the number of observed dimensions for each marker
+    Applies a determined length of missing data to a time series dataframe. Used to compare to state of the art
+    metrics.
+    :param time_series_tensor: a torch.tensor of time series data
+    :param gap_duration: how long the gaps in the data should be
+    :param num_markers: how many markers you want to have missing data
+    :param missing_val: what value the missing data should take (e.g. NaN, 0.0000 etc)
+    :return: torch.tensor with applied missing data.
+    """
+    assert isinstance(time_series_tensor, torch.Tensor)
+
+    missing_idx = []
+
+    if len(time_series_tensor.size()) < 3:
+        time_series_tensor_copy = time_series_tensor.clone()
+        time_series_tensor_copy = time_series_tensor_copy.unsqueeze(0)
+    else:
+        time_series_tensor_copy = time_series_tensor.clone()
+
+    missing_array = torch.Tensor()
+    for k in range(time_series_tensor_copy.size(0)):
+        erased_data = time_series_tensor_copy[k]
+
+        # Pick starting index for erasure
+        index_max = erased_data.size(0)
+
+        # Pick starting column for erasure (must be x dim column)
+        cols_min = 0
+        cols_max = erased_data.size(1)
+        start_cols = [i for i in range(cols_min, cols_max, 3)]
+
+        markers_to_erase = np.random.choice(start_cols, size=num_markers, replace=False)
+
+        # this loop simulates missing markers by erasing x,y, and z data from given markers
+        for erasure in markers_to_erase:
+            start_row = np.random.randint(0, index_max - gap_duration)
+            start_col = erasure
+            for i in range(gap_duration):
+                for j in range(3):
+                    erased_data[start_row + i][start_col + j] = missing_val
+                    missing_idx.append((start_row+i, start_col+j))
+        erased_data = erased_data.unsqueeze(0)
+        missing_array = torch.cat((missing_array, erased_data))
+
+    return missing_array, missing_idx
+
+
+def split(data, chunk_size=None):
+    """
+    Given a motion capture data file as a torch tensor this function will split the files into a number of subfiles
+    of a given size. This should be used to provide unseen data with missing markers to a trained network to fill in
+    the gaps. Split will split the data up into the appropriate sized chucks for the trained network, which can then
+    be reassembled by the merge function.
+    :param data: torch tensor of data
+    :param chunk_size: Size of the slices the data will be split into. This should equal the length of data that the
+    network was trained on.
+    :return: Tuple of (Copy of the original data, A torch.tensor of the slices of shape (num_slices, num_time_steps,
+    num_features)) where num_features should be the number of markers used * the number of observed dimensions for
+    each marker
     (x,y,z etc).
     """
-    data = np.genfromtxt(data, delimiter=',')
-    data_copy = data.copy()
-    if index_cols:
-        data_copy = data_copy[1:][:, 1:]
-    data_copy = data_copy[:(data_copy.shape[0] - (data_copy.shape[0] % padding))]
-    print('Original data shape: ' + str(data_copy.shape))
-    sub_lists = np.empty(result_dim)
-    for j in range(0, data_copy.shape[0] - size + padding, padding):
-        data_slice = data_copy[j:j + size]
-        data_slice = np.expand_dims(data_slice, axis=0)
-        sub_lists = np.append(sub_lists, data_slice, axis=0)
-    data_copy[np.isnan(data_copy)] = 0.0000
-    sub_lists[np.isnan(sub_lists)] = 0.0000
-    return data_copy, sub_lists
+    data_copy = data.clone()
+    data_copy = data_copy[:(data_copy.size(0) - (data_copy.size(0) % chunk_size))]
+    print('Original data shape: ' + str(data_copy.size()))
+    sub_lists = torch.Tensor()
+    for j in range(0, data_copy.size(0) - chunk_size + 1, chunk_size):
+        data_slice = data_copy[j:j + chunk_size]
+        data_slice = data_slice.unsqueeze(0)
+        sub_lists = torch.cat((sub_lists, data_slice))
+    data_copy[torch.isnan(data_copy)] = 0.0000
+    sub_lists[torch.isnan(sub_lists)] = 0.0000
+    return data_copy.float(), sub_lists.float()
 
 
-def merge(sub_lists, padding=5, result_dim=(0, 30)):
+def merge(sub_lists):
     """
-    Given an array of sublists of a data file (should be given by the split function) will rejoin said sublists
+    Given an torch Tensor of sublists of a data file (should be given by the split function) will rejoin said sublists
     into the original array. This should be used after feeding the slices of the datafile into the network to create
     an array of estimated data of the same size of the file you want to gap fill.
     :param sub_lists: np.array of slices of a given data file.
-    :param padding: padding: How many time steps to move the moving window after taking a slice.
-    :param result_dim: The resulting dimension of the output array. This should be of shape (0, num_features) where
-    num_features is the number of markers * number of observed dimensions for each marker (x,y,z etc)
-    :return: a merged np.array of the given split data
+    :return: a merged torch.Tensor of the given split data
     """
-    super_list = np.empty(result_dim)
-    for i in range(sub_lists.shape[0]-1):
+    sub_lists = sub_lists.clone()
+    super_list = torch.Tensor()
+    for i in range(sub_lists.size(0)):
         array = sub_lists[i]
-        data_slice = array[:padding]
-        super_list = np.append(super_list, data_slice, axis=0)
-    super_list = np.append(super_list, sub_lists[-1], axis=0)
-    print('Merged data shape: ' + str(super_list.shape))
-    return super_list
+        super_list = torch.cat((super_list, array))
+    print('Merged data shape: ' + str(super_list.size()))
+    return super_list.float()
 
 
 def gap_fill(original, estimated):
@@ -395,11 +433,13 @@ def gap_fill(original, estimated):
     :return: torch.tensor of the original data but with the missing marker data points filled in with the network's
     estimates.
     """
+    if type(original) == torch.Tensor:
+        original = original.detach().numpy()
     gap_filled = original.copy()
     idx = np.argwhere(np.isnan(gap_filled))
     for i in range(len(idx)):
         gap_filled[idx[i][0]][idx[i][1]] = estimated[idx[i][0]][idx[i][1]]
-    return torch.as_tensor(gap_filled)
+    return torch.as_tensor(gap_filled).float()
 
 
 def find_mean_pose(data_directory='', num_markers=None):
@@ -408,7 +448,7 @@ def find_mean_pose(data_directory='', num_markers=None):
     the data
     :param data_directory: Path to data
     :param num_markers: Number of markers used for capture (this should be the same in each file)
-    :return: np.array of mean pose.
+    :return: torch.Tensor of mean pose.
     """
 
     directory = Path(data_directory)
@@ -425,7 +465,7 @@ def find_mean_pose(data_directory='', num_markers=None):
 
         mean_poses = np.append(mean_poses, np.expand_dims(mean, axis=0), axis=0)
 
-    return np.mean(mean_poses, axis=0)
+    return torch.as_tensor(np.mean(mean_poses, axis=0))
 
 
 def csv_to_tensor(data_dir='', new_data_dir=''):
@@ -477,7 +517,6 @@ def find_max(path=''):
     :return: Maximum value from dataset as dtype: float.64.
     """
 
-
     directory = Path(path)
     files = [p for p in directory.iterdir() if p.is_file() and str(p).endswith('.csv')]
 
@@ -507,13 +546,28 @@ def normalize_series(time_series_tensor, mean_pose, data_max_val):
     assert isinstance(time_series_tensor, torch.Tensor)
 
     time_series_tensor_copy = time_series_tensor.clone()
-    for i in range(time_series_tensor_copy.shape[0]):
+    for i in range(time_series_tensor_copy.size(0)):
         time_series_tensor_copy[i] -= mean_pose
     time_series_tensor_copy = time_series_tensor_copy / data_max_val
     return time_series_tensor_copy
 
 
-def translate_to_marker(data, origin_marker=None):
+def denormalize_series(time_series_tensor, mean_pose, data_max_val):
+    """
+    Denormalizes a time series from -1, 1 range back into CMU values.
+    :param time_series_tensor: torch.tensor of noramlized time series data
+    :param mean_pose: mean pose from non-normalized dataset
+    :param data_max_val: maximum value from non-normalized dataset
+    :return:
+    """
+    time_series_tensor_copy = time_series_tensor.clone()
+    time_series_tensor_copy = time_series_tensor_copy * data_max_val
+    for i in range(time_series_tensor_copy.size(0)):
+        time_series_tensor_copy[i] += mean_pose
+    return time_series_tensor_copy
+
+
+def translate_to_marker(data, origin_marker=21):
     """
     Given a numpy array of marker data will return that marker data with all makers
     translated to a origin maker.
@@ -529,10 +583,13 @@ def translate_to_marker(data, origin_marker=None):
         for m in range(0, 123, 3):
             data[row][m:m + 3] -= origin
 
+    return data
+
+
 def crop_to_missing(local_batch, local_batch_missing, outputs):
     """
     Crops elements from ground truth arrays that were made to be missing and crops the same elements
-    from the estimated array to create to n length vectors where n is the number of missing data points.
+    from the estimated array to create two n length vectors where n is the number of missing data points.
     These two vectors can then be used to more accurate cost calculations
     :param local_batch: batch of ground truth tensors.
     :param local_batch_missing: batch of local_batch tensors with missing markers applied
