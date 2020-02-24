@@ -7,23 +7,23 @@ can be imported from the 'autoencoder_architectures' directory.
 """
 
 import torch
-import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils import data
 from data_loader import DataSet
 from RMSE_loss import RMSE_loss
-from autoencoder_architectures.LSTMAE import LSTMAE
-from functions import load_data, apply_missing_cmu_val
+from autoencoder_architectures.IRNNAE import IRNNAE
+from functions import load_data, apply_missing_cmu_val, crop_to_missing
+
 
 # set script params here
-architecture = 'LSTMAE'
+architecture = 'IRNNAE'
 # path_to_ground_truth = '/home/henryp/PycharmProjects/MoGap/filtered_tensors'
 batch_size = 32
 params = {'batch_size': batch_size,
           'shuffle': True,
           'num_workers': 6}
-max_epochs = 90
+max_epochs = 200
 # pick whether you want to train the network on GPU or CPU
 run_on = 'GPU'
 # change to false if you want to preload the network with saved weights
@@ -36,7 +36,7 @@ mean_pose = np.load('./mean_pose.npy')
 max_val = np.load('./data_max.npy')
 
 # where to save the saved network weights after training
-PATH = './MoGapSaveState.pth'
+PATH = './MoGapSaveState' + architecture + '_test.pth'
 
 # path to data that has been cropped into smaller same-sized chucks
 cropped_ground_truth_path_train = '/run/media/henryp/HenryHDD/DataSets/CMU/Formatted/Train/Cropped_data/sliced_'
@@ -71,13 +71,13 @@ training_generator = data.DataLoader(training_set, **params)
 
 # load the network class
 # input size is the number of features in your input data
-net = LSTMAE(input_size=123, enc_first_size=62, enc_second_size=31,
-             dec_first_size=31, output_size=123, num_layers=1)
+net = IRNNAE(input_size=123, num_layers=1, grad_clip=True)
 net = net.cuda()
 
 if train_network:
 
     # select network hyper parameters
+    clip_value = 1
     criterion = RMSE_loss()
     optimizer = torch.optim.Adam(net.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
@@ -86,16 +86,15 @@ if train_network:
     loss_values = []
 
     # training loop
+    best_loss = 1000
     for epoch in range(max_epochs):
         for local_batch in training_generator:
 
-            # shuffle_tensor_order
-            permute = torch.randperm(local_batch.size(0))
-            local_batch = local_batch[permute]
-
-            # apply missing markers
-            local_batch_missing = apply_missing_cmu_val(time_series_tensor=local_batch, erasures_perc=10)
-
+            # apply missing markers and split missing and ground truth data
+            local_batch = local_batch.float()
+            local_batch_missing, _ = apply_missing_cmu_val(time_series_tensor=local_batch,
+                                                           erasures_perc=10,
+                                                           missing_val=0.0000)
             # move to GPU
             local_batch = local_batch.to(device)
             local_batch_missing = local_batch_missing.to(device)
@@ -104,9 +103,14 @@ if train_network:
             optimizer.zero_grad()
             outputs = net(local_batch_missing)
 
+            # get only missing data
+            # y, y_hat = crop_to_missing(local_batch, local_batch_missing, outputs)
             # backwards step, RMSE loss
+
             loss = criterion(outputs, local_batch)
+            # loss = criterion(y_hat, y)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), clip_value)
             optimizer.step()
         scheduler.step(loss)
 
@@ -114,7 +118,10 @@ if train_network:
               .format(epoch + 1, max_epochs, loss.data))
         loss_values.append(loss.data.item())
 
-    torch.save(net.state_dict(), PATH)
+        # save best epoch
+        if loss.data < best_loss:
+            best_loss = loss.data
+            torch.save(net.state_dict(), PATH)
 
     # plot loss over training
     plt.plot([i for i in range(max_epochs)], loss_values)

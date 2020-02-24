@@ -1,5 +1,6 @@
 import torch.nn as nn
 
+
 class EncoderCNNLSTM(nn.Module):
     def __init__(self, num_frames):
         super(EncoderCNNLSTM, self).__init__()
@@ -34,11 +35,11 @@ class DecoderCNNLSTM(nn.Module):
         self.num_layers = num_layers
 
         self.LSTM_dec_one = nn.LSTM(input_size=102,
-                                    hidden_size=50,
+                                    hidden_size=1024,
                                     num_layers=num_layers,
                                     batch_first=True)
 
-        self.LSTM_dec_two = nn.LSTM(input_size=50,
+        self.LSTM_dec_two = nn.LSTM(input_size=1024,
                                     hidden_size=102,
                                     num_layers=num_layers,
                                     batch_first=True)

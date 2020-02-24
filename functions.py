@@ -79,7 +79,7 @@ def load_data(ground_truth_dir, type='train'):
 
     # if type == 'train':
     names = []
-    for i in range(1, 35):
+    for i in range(1, 2):   # max 35
         ground_truth_names = os.listdir(ground_truth_dir + str(i))
         ground_truth_names = [str(i) + '/' + k for k in ground_truth_names]
         ground_truth_names.sort()
@@ -593,7 +593,7 @@ def crop_to_missing(local_batch, local_batch_missing, outputs):
     These two vectors can then be used to more accurate cost calculations
     :param local_batch: batch of ground truth tensors.
     :param local_batch_missing: batch of local_batch tensors with missing markers applied
-    :param outputs: batch of outpout tensors from the neural network.
+    :param outputs: batch of output tensors from the neural network.
     :return: y, y_hat where y is ground truth values of the missing marker elements and y_hat is
     the estimated values.
     """
@@ -613,3 +613,9 @@ def crop_to_missing(local_batch, local_batch_missing, outputs):
         y_hat = torch.cat((y_hat, val_y.unsqueeze(0)))
 
     return y, y_hat
+
+
+def clip_grad(nabla, min, max):
+    nabla_tmp = nabla.expand_as(nabla)
+    nabla_tmp.register_hook(lambda g: g.clamp(min, max))
+    return nabla_tmp
