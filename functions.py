@@ -77,25 +77,26 @@ def load_data(ground_truth_dir, type='train'):
     size of the training set.
     """
 
-    # if type == 'train':
-    names = []
-    for i in range(1, 2):   # max 35
-        ground_truth_names = os.listdir(ground_truth_dir + str(i))
-        ground_truth_names = [str(i) + '/' + k for k in ground_truth_names]
+    if type == 'train':
+        names = []
+        for i in range(1, 35):   # max 35
+            ground_truth_names = os.listdir(ground_truth_dir + str(i))
+            ground_truth_names = [str(i) + '/' + k for k in ground_truth_names]
+            ground_truth_names.sort()
+            shuffle(ground_truth_names)
+            names.append(ground_truth_names)
+
+        names = [i for sublist in names for i in sublist]
+        partition = {'train': names}
+
+    elif type == 'test':
+        names = []
+        ground_truth_names = os.listdir(ground_truth_dir)
         ground_truth_names.sort()
         shuffle(ground_truth_names)
         names.append(ground_truth_names)
-
-    names = [i for sublist in names for i in sublist]
-    partition = {'train': names}
-
-    # elif type == 'test':
-    #     names = []
-    #     ground_truth_names = os.listdir(ground_truth_dir)
-    #     ground_truth_names.sort()
-    #     shuffle(ground_truth_names)
-    #     names.append(ground_truth_names)
-    #     partition = {'test': names}
+        names = [i for sublist in names for i in sublist]
+        partition = {'test': names}
     #
     # elif type == 'val':
     #     names = []
@@ -210,7 +211,7 @@ def remove_nan_files(path_gt):
         os.remove(i)
 
 
-def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=0.0000):
+def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=None):
     """
     Given a time series tensor (torch.tensor) will simulate missing markers by replacing values in the tensor with missing_val (this is
     suggested to be something like np.nan or 0.0000).
@@ -277,7 +278,7 @@ def apply_missing(time_series_tensor, max_erasures, max_gap_size, missing_val=0.
     return missing_array
 
 
-def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.0000):
+def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=None):
     """
     Given a time series tensor (torch.tensor) will simulate missing markers by replacing values in the tensor with missing_val (this is
     suggested to be something like np.nan or 0.0000).
@@ -332,7 +333,7 @@ def apply_missing_cmu_val(time_series_tensor, erasures_perc=None, missing_val=0.
     return missing_array, max_erasure_len
 
 
-def apply_missing_fixed(time_series_tensor, gap_duration=50, num_markers=5, missing_val=0.0000):
+def apply_missing_fixed(time_series_tensor, gap_duration=50, num_markers=5, missing_val=None):
     """
     Applies a determined length of missing data to a time series dataframe. Used to compare to state of the art
     metrics.
@@ -586,7 +587,7 @@ def translate_to_marker(data, origin_marker=21):
     return data
 
 
-def crop_to_missing(local_batch, local_batch_missing, outputs):
+def crop_to_missing(local_batch, local_batch_missing, outputs, nan_val=None):
     """
     Crops elements from ground truth arrays that were made to be missing and crops the same elements
     from the estimated array to create two n length vectors where n is the number of missing data points.
@@ -594,28 +595,23 @@ def crop_to_missing(local_batch, local_batch_missing, outputs):
     :param local_batch: batch of ground truth tensors.
     :param local_batch_missing: batch of local_batch tensors with missing markers applied
     :param outputs: batch of output tensors from the neural network.
+    :param nan_val: what numerical value NaN has been assigned in the data.
     :return: y, y_hat where y is ground truth values of the missing marker elements and y_hat is
     the estimated values.
     """
 
-    idx = np.where(local_batch_missing == 0.000)
+    idx = torch.where(local_batch_missing == nan_val)
     idxs = list(zip(idx[0], idx[1], idx[2]))
-    idxs = [list(i) for i in idxs]
+    idxs = (list(i) for i in idxs)
 
-    y = torch.Tensor()
-    y_hat = torch.Tensor()
+    y = torch.Tensor().cuda()
+    y_hat = torch.Tensor().cuda()
 
-    for i in idxs:
-        val_x = local_batch[i[0], i[1], i[2]]
-        val_y = outputs[i[0], i[1], i[2]]
+    for i, j, k in idxs:
+        val_x = local_batch[[i, j, k]]
+        val_y = outputs[[i, j, k]]
 
         y = torch.cat((y, val_x.unsqueeze(0)))
         y_hat = torch.cat((y_hat, val_y.unsqueeze(0)))
 
     return y, y_hat
-
-
-def clip_grad(nabla, min, max):
-    nabla_tmp = nabla.expand_as(nabla)
-    nabla_tmp.register_hook(lambda g: g.clamp(min, max))
-    return nabla_tmp
